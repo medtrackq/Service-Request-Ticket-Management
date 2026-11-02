@@ -38,13 +38,44 @@ reference data is re-seeded before every test.
 | `scripts/backup.sh` | DB dump + storage tarball + checksums; dump verified with `pg_restore --list` |
 | Restore after simulated data loss (`DELETE FROM tickets`, storage wiped) | `scripts/restore.sh` restored ticket and all attachments; numbering continued at the next number |
 
-## 3. Frontend & end-to-end tests
+## 3. Frontend build & end-to-end tests
 
-See section 4 (filled in from the E2E run).
+```bash
+cd frontend
+npm ci
+npm run build                                   # tsc -b (strict, zero errors) + vite build
+# against the dev servers (API :8000 + vite :5173):
+node e2e/portal-mobile.e2e.mjs
+# against a deployed stack (self-signed certificate allowed for testing):
+BASE_URL=https://localhost:8443 E2E_IGNORE_HTTPS_ERRORS=1 node e2e/portal-mobile.e2e.mjs
+```
 
-## 4. Mobile / browser verification
+`e2e/portal-mobile.e2e.mjs` (Playwright, Chromium with device emulation) checks:
 
-FRONTEND_E2E_RESULTS
+| Scenario | Checks |
+|----------|--------|
+| Mobile — `iPhone 13` and `Pixel 7` profiles | home with six categories; required-field errors; camera input has `capture`; counter 0/10 → 3 previews (3/10); adding 9 more → over-limit warning ("2 excess files"), capped at 10/10, add button disabled; remove one → 9/10; consent required; submit → `BUC-SRV-YYYY-NNNNN`; tracking link uses `#t=` fragment; tracking page shows "รับเรื่องใหม่"; wrong token rejected; **no horizontal scroll** on every step |
+| Desktop staff | admin login; dashboard charts render; ticket detail opens; gallery shows all 9 uploaded images, thumbnails load; full-screen viewer opens; keyboard navigation |
+| Security | anonymous request for an attachment URL → 401 |
+
+**Results:**
+* against the Vite dev server + dev API: all checks passed (two consecutive runs);
+* against the **production-mode Docker stack through Nginx over HTTPS** (CSP and security headers
+  active): **ALL CHECKS PASSED**.
+
+Also checked manually: forced password change for a new staff account, staff-scoped navigation
+(no admin/reports/bulk/CSV), "รับงานนี้" on unassigned department tickets, English toggle persisting.
+
+## 4. HTTPS stack checks (Docker, Nginx)
+
+| Check | Result |
+|-------|--------|
+| HTTP → HTTPS redirect | 301 |
+| SPA deep link (`/request/service`) | 200 with HSTS, CSP, X-Frame-Options DENY, nosniff, Referrer-Policy |
+| Hashed assets | `Cache-Control: public, immutable` + security headers |
+| `/api/health` | `{"status":"ok"}` |
+| `/api/docs`, `/api/openapi.json` in production | 404 |
+| Dotfiles (`/.env`) | 403 |
 
 ## 5. Not verified (requires real devices / accounts)
 

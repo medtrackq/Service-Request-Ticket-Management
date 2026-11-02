@@ -66,12 +66,16 @@ def test_customer_reply_with_images_resumes_work(client):
         return client.post("/api/v1/public/track/reply", data={"payload": payload},
                            files=[("files", f) for f in files] or None)
 
+    view = _track(client, t["ticket_number"], t["tracking_token"]).json()
+    assert view["request_type_slug"] == "service"
+    assert view["reply_file_rules"] == {"max_files": 2, "max_size_mb": 10, "accept": ["image/jpeg", "image/png"]}
     # 8 existing + 3 new would exceed the 10-image limit per Service Request ticket
     extra = distinct_images(11)[8:]
     assert reply(extra).status_code == 422
     r = reply(extra[:2])
     assert r.status_code == 200
     assert r.json()["status"] == "IN_PROGRESS"
+    assert r.json()["reply_file_rules"]["max_files"] == 0
     d = s.get(f"/api/v1/tickets/{tid}").json()
     assert len(d["attachments"]) == 10
     assert d["comments"][-1]["author_type"] == "CUSTOMER"

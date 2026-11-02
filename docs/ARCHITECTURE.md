@@ -62,7 +62,10 @@ Persistent volumes: `pgdata` (database), `storage` (attachments, never served di
 | Password hashing | argon2-cffi (Argon2id) | 25.1.0 |
 | Image validation | Pillow | 12.3.0 |
 | Database | PostgreSQL | 16 |
-| Frontend | React / React Router / TypeScript / Vite / Tailwind CSS / Recharts | see `frontend/package.json` |
+| Frontend | React / React Router / TypeScript | 19.2.9 / 7.18.5 / 5.9.3 |
+| Frontend build & styling | Vite / @vitejs/plugin-react / Tailwind CSS (+ @tailwindcss/vite) | 7.3.7 / 5.2.0 / 4.1.18 |
+| Charts | Recharts | 3.6.0 |
+| Node.js (build image) | node:22-alpine | 22 |
 | Reverse proxy | Nginx | 1.27 |
 
 ## 4. Backend layering

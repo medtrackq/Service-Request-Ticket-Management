@@ -4,10 +4,11 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.models import (
+    FormDefinition,
     Ticket,
     TicketAttachment,
     TicketComment,
@@ -18,6 +19,7 @@ from app.models import (
     utcnow,
 )
 from app.security.tokens import new_token, sha256_hex
+from app.services.form_engine import file_rules
 from app.services.settings_service import get_setting
 
 
@@ -95,14 +97,17 @@ def public_view(db: Session, ticket: Ticket) -> dict[str, Any]:
         })
     timeline.sort(key=lambda e: (e["at"], 0 if e["type"] == "STATUS" else 1))
     customer_files = db.scalar(
-        select(TicketAttachment.id).where(TicketAttachment.ticket_id == ticket.id,
-                                          TicketAttachment.source == "CUSTOMER",
-                                          TicketAttachment.deleted_at.is_(None)).limit(1)
-    )
+        select(func.count()).select_from(TicketAttachment).where(
+            TicketAttachment.ticket_id == ticket.id, TicketAttachment.source == "CUSTOMER",
+            TicketAttachment.deleted_at.is_(None))
+    ) or 0
+    # Reply uploads follow the rules of the form version the ticket was submitted with.
+    _, rules = file_rules(db.get(FormDefinition, ticket.form_definition_id))
     st = statuses[ticket.status]
     return {
         "ticket_number": ticket.ticket_number,
         "request_type_code": ticket.request_type.code,
+        "request_type_slug": ticket.request_type.slug,
         "request_type_name_th": ticket.request_type.name_th,
         "request_type_name_en": ticket.request_type.name_en,
         "subject": ticket.subject,
@@ -112,6 +117,11 @@ def public_view(db: Session, ticket: Ticket) -> dict[str, Any]:
         "status_name_en": st.name_en,
         "status_category": st.category,
         "can_reply": not st.is_terminal and ticket.anonymized_at is None,
-        "has_attachments": customer_files is not None,
+        "has_attachments": customer_files > 0,
+        "reply_file_rules": {
+            "max_files": max(rules.max_files - customer_files, 0),  # remaining for this ticket
+            "max_size_mb": rules.max_size_mb,
+            "accept": list(rules.accept),
+        },
         "timeline": timeline,
     }

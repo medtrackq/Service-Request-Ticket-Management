@@ -1,0 +1,107 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Noto Sans Thai", "Sarabun", "Leelawadee UI", "Thonburi", system-ui, -apple-system, "Segoe UI",
+    Roboto, sans-serif;
+
+  --color-navy-950: #061a33;
+  --color-navy-900: #0b2545;
+  --color-navy-800: #13315c;
+  --color-navy-700: #1d4477;
+  --color-navy-600: #2a5a94;
+
+  --color-brand-50: #eef5fc;
+  --color-brand-100: #d7e8f8;
+  --color-brand-200: #b0d0f1;
+  --color-brand-300: #7fb2e6;
+  --color-brand-400: #4b92dc;
+  --color-brand-500: #2477cc;
+  --color-brand-600: #145fae;
+  --color-brand-700: #0f4c8b;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-slate-100 text-slate-800 antialiased;
+    font-family: var(--font-sans);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 2px;
+  }
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+  }
+  /* Avoid iOS zoom on focus: inputs must be at least 16px on small screens */
+  @media (max-width: 640px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+}
+
+@utility input {
+  @apply block w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-slate-900 shadow-sm
+    placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 focus:outline-none
+    disabled:bg-slate-100 disabled:text-slate-500;
+}
+@utility input-error {
+  @apply border-red-400 focus:border-red-500 focus:ring-red-500/20;
+}
+@utility label {
+  @apply mb-1.5 block text-sm font-medium text-slate-700;
+}
+@utility card {
+  @apply rounded-xl border border-slate-200 bg-white shadow-sm;
+}
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition
+    disabled:cursor-not-allowed disabled:opacity-60;
+}
+@utility btn-primary {
+  @apply btn bg-brand-600 text-white shadow-sm hover:bg-brand-700 active:bg-navy-800;
+}
+@utility btn-secondary {
+  @apply btn border border-slate-300 bg-white text-slate-700 hover:bg-slate-50;
+}
+@utility btn-ghost {
+  @apply btn text-slate-600 hover:bg-slate-100;
+}
+@utility btn-danger {
+  @apply btn bg-red-600 text-white hover:bg-red-700;
+}
+@utility btn-sm {
+  @apply px-3 py-1.5 text-xs;
+}
+
+@layer components {
+  .table-base {
+    @apply min-w-full divide-y divide-slate-200 text-sm;
+  }
+  .table-base th {
+    @apply bg-slate-50 px-3 py-2.5 text-left text-xs font-semibold tracking-wide whitespace-nowrap text-slate-600;
+  }
+  .table-base td {
+    @apply px-3 py-2.5 align-top text-slate-700;
+  }
+  .sr-only-hp {
+    position: absolute !important;
+    left: -10000px !important;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+  }
+}
+
+.safe-bottom {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
