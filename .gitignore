@@ -1,0 +1,21 @@
+# secrets / local config
+.env
+*.env.local
+deploy/certs/*.pem
+deploy/certs/*.key
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+backend/storage/
+# node
+node_modules/
+frontend/dist/
+frontend/e2e/output/
+# backups
+backups/
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
