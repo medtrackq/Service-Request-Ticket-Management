@@ -89,7 +89,10 @@ def cmd_bootstrap_admin(_: argparse.Namespace) -> None:
             return
         errors = password_policy_errors(password, 10)
         if errors:
-            sys.exit("bootstrap-admin: password rejected: " + "; ".join(errors))
+            # Never block the application start-up because of the bootstrap account.
+            print("bootstrap-admin: WARNING password rejected, administrator NOT created: " + "; ".join(errors)
+                  + " — fix BUC_BOOTSTRAP_ADMIN_PASSWORD and redeploy")
+            return
         db.add(User(username=username, role="ADMIN", must_change_password=True,
                     full_name=os.environ.get("BUC_BOOTSTRAP_ADMIN_FULL_NAME") or "System Administrator",
                     email=(os.environ.get("BUC_BOOTSTRAP_ADMIN_EMAIL") or None),

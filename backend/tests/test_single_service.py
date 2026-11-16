@@ -52,6 +52,11 @@ def test_bootstrap_admin(db, monkeypatch, capsys):
 
     cmd_bootstrap_admin(None)  # no variables -> no-op
     assert db.scalar(select(User.id)) is None
+    monkeypatch.setenv("BUC_BOOTSTRAP_ADMIN_USERNAME", "weak")
+    monkeypatch.setenv("BUC_BOOTSTRAP_ADMIN_PASSWORD", "short")
+    cmd_bootstrap_admin(None)  # weak password -> warning, no exit, no user
+    assert "NOT created" in capsys.readouterr().out
+    assert db.scalar(select(User.id)) is None
     monkeypatch.setenv("BUC_BOOTSTRAP_ADMIN_USERNAME", "Railway.Admin")
     monkeypatch.setenv("BUC_BOOTSTRAP_ADMIN_PASSWORD", "Temp-Admin-Pass-99")
     cmd_bootstrap_admin(None)
