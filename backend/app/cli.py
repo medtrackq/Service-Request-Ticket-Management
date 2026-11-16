@@ -70,6 +70,34 @@ def cmd_create_admin(args: argparse.Namespace) -> None:
     print(f"administrator '{args.username}' created")
 
 
+def cmd_bootstrap_admin(_: argparse.Namespace) -> None:
+    """Create the first administrator from BUC_BOOTSTRAP_ADMIN_* variables if no ADMIN exists.
+
+    For platforms without an interactive shell (e.g. Railway). The account must change its
+    password at first login; remove the variables afterwards. Never overwrites existing users.
+    """
+    username = (os.environ.get("BUC_BOOTSTRAP_ADMIN_USERNAME") or "").strip().lower()
+    password = os.environ.get("BUC_BOOTSTRAP_ADMIN_PASSWORD") or ""
+    if not username or not password:
+        return
+    with SessionLocal() as db:
+        if db.scalar(select(User.id).where(User.role == "ADMIN").limit(1)):
+            print("bootstrap-admin: an administrator already exists — nothing changed")
+            return
+        if db.scalar(select(User.id).where(func.lower(User.username) == username)):
+            print(f"bootstrap-admin: user '{username}' already exists — nothing changed")
+            return
+        errors = password_policy_errors(password, 10)
+        if errors:
+            sys.exit("bootstrap-admin: password rejected: " + "; ".join(errors))
+        db.add(User(username=username, role="ADMIN", must_change_password=True,
+                    full_name=os.environ.get("BUC_BOOTSTRAP_ADMIN_FULL_NAME") or "System Administrator",
+                    email=(os.environ.get("BUC_BOOTSTRAP_ADMIN_EMAIL") or None),
+                    password_hash=hash_password(password)))
+        db.commit()
+    print(f"bootstrap-admin: administrator '{username}' created (password change required at first login)")
+
+
 # ------------------------------------------------------------------ sample data
 
 SAMPLE_ORGS = [
@@ -238,6 +266,7 @@ def main() -> None:
     p = argparse.ArgumentParser(prog="python -m app.cli")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("seed").set_defaults(fn=cmd_seed)
+    sub.add_parser("bootstrap-admin").set_defaults(fn=cmd_bootstrap_admin)
     a = sub.add_parser("create-admin")
     a.add_argument("--username", required=True)
     a.add_argument("--full-name", required=True)

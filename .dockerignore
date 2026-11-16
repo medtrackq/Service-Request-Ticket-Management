@@ -1,11 +1,16 @@
-# Build context for deploy/web/Dockerfile is the repository root: send only what it needs.
+# Build context is the repository root for deploy/web/Dockerfile and deploy/railway/Dockerfile.
 .git
 .env
+*.env.local
 **/node_modules
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.venv
 frontend/dist
 frontend/e2e/output
-backend
-docs
-scripts
+backend/storage
+backend/tests
 backups
 deploy/certs
+docs

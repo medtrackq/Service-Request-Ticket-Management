@@ -7,6 +7,7 @@ from fastapi import Request
 from sqlalchemy.orm import Session
 
 from app.models import AuditLog, User
+from app.security.rate_limit import client_ip
 
 
 def audit(
@@ -23,7 +24,7 @@ def audit(
     ip = None
     ua = None
     if request is not None:
-        ip = request.client.host if request.client else None
+        ip = client_ip(request)
         ua = (request.headers.get("user-agent") or "")[:300]
     db.add(
         AuditLog(

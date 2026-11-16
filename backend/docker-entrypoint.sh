@@ -20,5 +20,6 @@ PY
 if [ "${BUC_RUN_MIGRATIONS:-1}" = "1" ]; then
   alembic upgrade head
   python -m app.cli seed
+  python -m app.cli bootstrap-admin   # no-op unless BUC_BOOTSTRAP_ADMIN_* are set
 fi
 exec "$@"

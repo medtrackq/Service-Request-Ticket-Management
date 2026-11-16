@@ -8,7 +8,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -29,11 +30,29 @@ MAX_BODY_BYTES = 120 * 1024 * 1024  # 10 images x 10 MB + form data; Nginx enfor
 
 
 
+# Same policy as deploy/nginx/security-headers.conf (used when the API serves the SPA itself).
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self'; "
+    "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     storage_root()
     log.info("BUC API started (environment=%s, base_url=%s)", settings.environment, settings.public_base_url)
+    worker = None
+    if settings.run_worker_in_process:
+        from app.worker import start_background_thread
+
+        worker = start_background_thread()
+        log.info("background worker running inside the API process")
     yield
+    if worker is not None:
+        thread, stop = worker
+        stop.set()
+        thread.join(timeout=15)
 
 
 app = FastAPI(
@@ -63,8 +82,18 @@ async def security_headers(request: Request, call_next):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
-    if request.url.path.startswith("/api/"):
+    if settings.is_production:
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    path = request.url.path
+    if path.startswith("/api/"):
         response.headers.setdefault("Cache-Control", "no-store")
+    elif settings.static_dir:
+        response.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+        response.headers.setdefault("Permissions-Policy", "camera=(self), geolocation=(), microphone=()")
+        if path.startswith("/assets/"):
+            response.headers.setdefault("Cache-Control", "public, max-age=31536000, immutable")
+        else:
+            response.headers.setdefault("Cache-Control", "no-cache")
     return response
 
 
@@ -115,3 +144,22 @@ def health() -> dict:
     with SessionLocal() as db:
         db.execute(text("SELECT 1"))
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------- single-service SPA hosting
+if settings.static_dir and (settings.static_dir / "index.html").is_file():
+    STATIC_ROOT = settings.static_dir.resolve()
+    INDEX_HTML = STATIC_ROOT / "index.html"
+    if (STATIC_ROOT / "assets").is_dir():
+        app.mount("/assets", StaticFiles(directory=STATIC_ROOT / "assets"), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa(full_path: str):
+        """Static files of the SPA; any other non-API path returns index.html (client-side routing)."""
+        if full_path == "api" or full_path.startswith("api/"):
+            raise StarletteHTTPException(status_code=404, detail="Not Found")
+        if full_path:
+            candidate = (STATIC_ROOT / full_path).resolve()
+            if STATIC_ROOT in candidate.parents and candidate.is_file() and not candidate.name.startswith("."):
+                return FileResponse(candidate)
+        return FileResponse(INDEX_HTML)

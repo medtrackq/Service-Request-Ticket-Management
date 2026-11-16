@@ -5,10 +5,11 @@ Nothing secret is hard-coded; production start-up refuses insecure defaults.
 """
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 INSECURE_SECRET = "change-me-in-production-this-is-not-secret"
@@ -36,13 +37,23 @@ class Settings(BaseSettings):
     password_min_length: int = 10
     # Comma separated list of origins allowed for CORS (empty = same-origin only).
     cors_origins: str = ""
+    # Header set (and overwritten) by a trusted edge proxy with the real client IP, e.g.
+    # "X-Real-IP" on Railway. Empty = use the connection address (Nginx/uvicorn proxy headers).
+    client_ip_header: str = ""
 
     # --- database ----------------------------------------------------------
-    database_url: str = "postgresql+psycopg://buc:buc_dev_password@localhost:5432/buc_service"
+    # BUC_DATABASE_URL, or DATABASE_URL as injected by PaaS providers such as Railway.
+    database_url: str = Field(
+        default="postgresql+psycopg://buc:buc_dev_password@localhost:5432/buc_service",
+        validation_alias=AliasChoices("BUC_DATABASE_URL", "DATABASE_URL"),
+    )
     db_pool_size: int = 10
 
     # --- files -------------------------------------------------------------
     storage_dir: Path = Path("./storage")
+    # When set, the API also serves the built SPA from this directory (single-service
+    # deployments such as Railway). Docker Compose uses Nginx for this instead.
+    static_dir: Path | None = None
     max_upload_mb: int = 10
 
     # --- rate limiting (per client IP, per process) --------------------------
@@ -72,6 +83,9 @@ class Settings(BaseSettings):
     erpnext_api_secret: str = ""
 
     # --- worker --------------------------------------------------------------
+    # Run the background worker as a thread inside the API process (single-service
+    # deployments). Docker Compose runs it as a separate container instead.
+    run_worker_in_process: bool = False
     worker_poll_seconds: int = 5
     worker_batch_size: int = 20
 
@@ -79,6 +93,22 @@ class Settings(BaseSettings):
     @classmethod
     def _strip_slash(cls, v: str) -> str:
         return v.rstrip("/")
+
+    @field_validator("database_url")
+    @classmethod
+    def _sqlalchemy_scheme(cls, v: str) -> str:
+        # Providers hand out postgres:// or postgresql:// URLs; SQLAlchemy needs the psycopg driver.
+        for prefix in ("postgres://", "postgresql://"):
+            if v.startswith(prefix):
+                return "postgresql+psycopg://" + v[len(prefix):]
+        return v
+
+    @model_validator(mode="after")
+    def _paas_defaults(self) -> "Settings":
+        domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
+        if "public_base_url" not in self.model_fields_set and domain:
+            self.public_base_url = f"https://{domain}"
+        return self
 
     @property
     def is_production(self) -> bool:

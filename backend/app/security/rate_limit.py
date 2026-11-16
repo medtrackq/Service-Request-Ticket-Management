@@ -12,6 +12,8 @@ from collections import defaultdict, deque
 
 from fastapi import HTTPException, Request, status
 
+from app.config import get_settings
+
 
 class RateLimiter:
     def __init__(self) -> None:
@@ -45,8 +47,17 @@ limiter = RateLimiter()
 
 
 def client_ip(request: Request) -> str:
-    # Uvicorn runs with --proxy-headers and a trusted --forwarded-allow-ips list,
-    # so request.client already reflects the real client behind Nginx.
+    """Real client address.
+
+    Behind Nginx (Docker Compose) uvicorn's --proxy-headers already resolves it from the
+    X-Forwarded-For value that Nginx overwrites. Behind an edge proxy that overwrites a
+    dedicated header (Railway: X-Real-IP), set BUC_CLIENT_IP_HEADER to read that header.
+    """
+    header = get_settings().client_ip_header
+    if header:
+        value = request.headers.get(header, "").split(",")[0].strip()
+        if value:
+            return value[:64]
     return request.client.host if request.client else "unknown"
 
 

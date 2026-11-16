@@ -1,0 +1,16 @@
+# Files never uploaded by `railway up` (in addition to .gitignore).
+.git
+.env
+*.env.local
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.venv
+frontend/dist
+frontend/e2e/output
+backend/storage
+backend/tests
+backups
+deploy/certs
+docs

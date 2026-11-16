@@ -59,7 +59,7 @@ docker compose exec api python -m app.cli create-admin --username admin --full-n
 ```
 
 Open `https://<domain>/` (customer portal) and `https://<domain>/admin` (staff).
-Full instructions: **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
+Full instructions: **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**. Railway (PaaS): **[docs/RAILWAY.md](docs/RAILWAY.md)**.
 
 ## Development
 
@@ -91,6 +91,7 @@ remove with `python -m app.cli purge-sample-data`.
 | [docs/API.md](docs/API.md) + [docs/openapi.json](docs/openapi.json) | REST API specification |
 | [docs/UI_STRUCTURE.md](docs/UI_STRUCTURE.md) | Screens and navigation of both portals |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Linux/Docker/HTTPS deployment, backups, operations |
+| [docs/RAILWAY.md](docs/RAILWAY.md) | Deploying to Railway (single service + PostgreSQL + volume) |
 | [docs/ADMIN_GUIDE.md](docs/ADMIN_GUIDE.md) | Administrator user guide (Thai) |
 | [docs/REPORTS.md](docs/REPORTS.md) | Dashboard/report calculation logic |
 | [docs/SECURITY.md](docs/SECURITY.md) | Security controls and PDPA support |

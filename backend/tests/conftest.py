@@ -23,6 +23,13 @@ os.environ["BUC_SECRET_KEY"] = "test-secret-key-test-secret-key-0123456789"
 os.environ["BUC_PUBLIC_BASE_URL"] = "https://service.example.test"
 os.environ["BUC_SMTP_HOST"] = ""
 os.environ["BUC_STORAGE_DIR"] = tempfile.mkdtemp(prefix="buc-test-storage-")
+# Serve a tiny SPA build from the API in tests: proves the catch-all route never shadows /api.
+_static = Path(tempfile.mkdtemp(prefix="buc-test-static-"))
+(_static / "assets").mkdir()
+(_static / "index.html").write_text("<!doctype html><title>BUC SPA</title><div id=root></div>")
+(_static / "assets" / "app-123.js").write_text("console.log('spa')")
+(_static / "favicon.svg").write_text("<svg xmlns='http://www.w3.org/2000/svg'/>")
+os.environ["BUC_STATIC_DIR"] = str(_static)
 
 from alembic import command  # noqa: E402
 from alembic.config import Config  # noqa: E402

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import signal
+import threading
 import time
 from datetime import timedelta
 
@@ -39,9 +40,6 @@ log = logging.getLogger("buc.worker")
 LEASE = timedelta(minutes=10)
 OVERDUE_EVERY = 300  # seconds
 RETENTION_EVERY = 6 * 3600
-
-_running = True
-
 
 def backoff(attempts: int) -> timedelta:
     """1, 2, 4, 8, 16 ... minutes, capped at 6 hours."""
@@ -193,20 +191,13 @@ def anonymize_ticket(db: Session, t: Ticket) -> None:
             c.anonymized_at = now
 
 
-def _stop(*_: object) -> None:
-    global _running
-    _running = False
-
-
-def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    signal.signal(signal.SIGTERM, _stop)
-    signal.signal(signal.SIGINT, _stop)
+def run_loop(stop: threading.Event) -> None:
+    """Process notifications continuously; overdue scan every 5 min, retention every 6 h."""
     s = get_settings()
     log.info("worker started (poll=%ss)", s.worker_poll_seconds)
     last_overdue = 0.0
     last_retention = 0.0
-    while _running:
+    while not stop.is_set():
         try:
             sent = process_notifications()
             now = time.monotonic()
@@ -224,11 +215,24 @@ def main() -> None:
                 continue
         except Exception:  # keep the worker alive; errors are logged and retried next loop
             log.exception("worker loop error")
-        for _ in range(s.worker_poll_seconds * 10):
-            if not _running:
-                break
-            time.sleep(0.1)
+        stop.wait(s.worker_poll_seconds)
     log.info("worker stopped")
+
+
+def start_background_thread() -> tuple[threading.Thread, threading.Event]:
+    """Run the worker inside another process (BUC_RUN_WORKER_IN_PROCESS=true)."""
+    stop = threading.Event()
+    thread = threading.Thread(target=run_loop, args=(stop,), name="buc-worker", daemon=True)
+    thread.start()
+    return thread, stop
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    stop = threading.Event()
+    signal.signal(signal.SIGTERM, lambda *_: stop.set())
+    signal.signal(signal.SIGINT, lambda *_: stop.set())
+    run_loop(stop)
 
 
 if __name__ == "__main__":

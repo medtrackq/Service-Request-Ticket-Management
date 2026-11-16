@@ -1,0 +1,11 @@
+# Railway service configuration (https://docs.railway.com/reference/config-as-code).
+# See docs/RAILWAY.md for the full set-up (Postgres, volume, variables, domain).
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "deploy/railway/Dockerfile"
+
+[deploy]
+healthcheckPath = "/api/health"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
