@@ -92,3 +92,18 @@ def test_worker_thread_starts_and_stops():
     thread.join(timeout=10)
     assert not thread.is_alive()
     assert os.environ.get("BUC_RUN_WORKER_IN_PROCESS") in (None, "", "0", "false")
+
+
+def test_public_url_normalisation_and_production_hint(monkeypatch):
+    import pytest
+
+    monkeypatch.delenv("RAILWAY_PUBLIC_DOMAIN", raising=False)
+    monkeypatch.setenv("BUC_PUBLIC_BASE_URL", "service.example.com/")
+    assert Settings(_env_file=None).public_base_url == "https://service.example.com"
+    monkeypatch.delenv("BUC_PUBLIC_BASE_URL")
+    monkeypatch.setenv("RAILWAY_ENVIRONMENT", "production")
+    s = Settings(_env_file=None, environment="production", cookie_secure=True, secret_key="x" * 40)
+    with pytest.raises(RuntimeError) as exc:
+        s.validate_for_production()
+    msg = str(exc.value)
+    assert "current value: 'http://localhost:5173'" in msg and "Generate Domain" in msg

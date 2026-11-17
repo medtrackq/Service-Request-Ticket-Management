@@ -92,7 +92,11 @@ class Settings(BaseSettings):
     @field_validator("public_base_url")
     @classmethod
     def _strip_slash(cls, v: str) -> str:
-        return v.rstrip("/")
+        v = v.strip().rstrip("/")
+        # Accept "service.example.com" (no scheme) as https://service.example.com
+        if v and "://" not in v:
+            v = "https://" + v
+        return v
 
     @field_validator("database_url")
     @classmethod
@@ -132,7 +136,12 @@ class Settings(BaseSettings):
         if not self.cookie_secure:
             problems.append("BUC_COOKIE_SECURE must be true in production (HTTPS)")
         if not self.public_base_url.startswith("https://"):
-            problems.append("BUC_PUBLIC_BASE_URL must use https:// in production")
+            hint = ""
+            if os.environ.get("RAILWAY_ENVIRONMENT") and not os.environ.get("RAILWAY_PUBLIC_DOMAIN"):
+                hint = (" — this Railway service has no public domain: Settings > Networking > Generate Domain,"
+                        " or set BUC_PUBLIC_BASE_URL=https://<your-domain>")
+            problems.append(f"BUC_PUBLIC_BASE_URL must use https:// in production (current value: "
+                            f"'{self.public_base_url}'){hint}")
         if problems:
             raise RuntimeError("Insecure production configuration: " + "; ".join(problems))
 
