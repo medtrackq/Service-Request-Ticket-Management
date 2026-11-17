@@ -63,6 +63,16 @@ overwrite or recreate users: the bootstrap only runs while no administrator exis
 | Attachment backup | volume backups in the Railway dashboard (where available for the plan) |
 | Sample data | not on production |
 
+## Troubleshooting
+
+| Symptom | Cause / fix |
+|---------|-------------|
+| Domain returns `502 Application failed to respond` while the service is Online | The domain's target port differs from the port the app listens on. Either set the variable `PORT` to the domain's port (e.g. `8088`) or change the domain port to the one in the log line `Uvicorn running on http://0.0.0.0:<port>` |
+| Logs repeat `waiting for database (...)` then `database not reachable`; service keeps restarting | Read the `database target:` line. `localhost:5432` means `DATABASE_URL` is missing on the app service: add it as a reference, **Variables → Add Variable Reference → Postgres → DATABASE_URL** (value `${{Postgres.DATABASE_URL}}`), then deploy. Any other host: check the Postgres service is Online and in the same project environment |
+| `Insecure production configuration: ...` | Generate the Railway domain first (or set `BUC_PUBLIC_BASE_URL` to an `https://` URL), use a `BUC_SECRET_KEY` of ≥ 32 characters, set `BUC_COOKIE_SECURE=true` |
+| `bootstrap-admin: WARNING password rejected` | Use ≥ 10 characters mixing letters and digits/symbols in `BUC_BOOTSTRAP_ADMIN_PASSWORD`, redeploy |
+| Variable changes have no effect | Railway stages changes: click **Deploy / Apply changes** at the top of the canvas |
+
 ## Notes and limitations
 
 * A service with a volume is redeployed with a short downtime (no overlap of old/new instances).
