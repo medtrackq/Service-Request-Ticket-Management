@@ -92,31 +92,33 @@ async function mobileFlow(browser, deviceName) {
 
   await page.locator('a[href="/request/service"]').click()
   await page.locator('#f-organization').waitFor()
-  // Step 1 — contact
-  await page.locator('[data-testid=next-step]').click()
+  // Single-page form: one submit button, no step navigation.
+  check((await page.locator('[data-testid=next-step]').count()) === 0, `[${deviceName}] single page (no Next button)`)
+  await page.locator('[data-testid=submit-request]').click()
   check(await page.getByText('กรุณากรอกข้อมูลนี้').first().isVisible(), `[${deviceName}] required-field validation shown`)
+  check(await page.locator('[data-testid=form-error-summary]').isVisible(), `[${deviceName}] error summary near submit`)
+  // Optional fields are filled only when the form still has them (fields can be removed by admins).
+  const fillIf = async (sel, value) => { if (await page.locator(sel).count()) await page.fill(sel, value) }
+  const selectIf = async (sel, value) => { if (await page.locator(sel).count()) await page.selectOption(sel, value) }
   await page.fill('#f-organization', 'โรงพยาบาลทดสอบ E2E')
-  await page.selectOption('#f-organization_type', 'GOV_HOSPITAL')
-  await page.fill('#f-department', 'ICU')
+  await selectIf('#f-organization_type', 'GOV_HOSPITAL')
+  await fillIf('#f-department', 'ICU')
   await page.fill('#f-contact_name', 'ผู้ทดสอบ อัตโนมัติ')
   await page.fill('#f-phone', '081-234-5678')
-  await page.fill('#f-email', 'e2e@example.com')
-  await noHorizontalScroll(page, `[${deviceName}] form step 1`)
-  await shot(page, `${tag}-02-form-step1`)
-  await page.locator('[data-testid=next-step]').click()
+  await fillIf('#f-email', 'e2e@example.com')
+  await noHorizontalScroll(page, `[${deviceName}] form (contact)`)
+  await shot(page, `${tag}-02-form-contact`)
 
-  // Step 2 — equipment details
-  await page.locator('#f-equipment_name').waitFor()
-  await page.selectOption('#f-equipment_type', 'MEDICAL_DEVICE')
+  await selectIf('#f-equipment_type', 'MEDICAL_DEVICE')
   await page.fill('#f-equipment_name', 'Infusion Pump')
-  await page.fill('#f-brand', 'SampleMed')
-  await page.fill('#f-model', 'IP-200')
-  await page.fill('#f-serial_number', `E2E-${Date.now()}`)
-  await page.fill('#f-install_location', 'อาคาร 1 ชั้น 3')
-  await page.selectOption('#f-problem_type', 'EQUIPMENT_FAILURE')
+  await fillIf('#f-brand', 'SampleMed')
+  await fillIf('#f-model', 'IP-200')
+  await fillIf('#f-serial_number', `E2E-${Date.now()}`)
+  await fillIf('#f-install_location', 'อาคาร 1 ชั้น 3')
+  await selectIf('#f-problem_type', 'EQUIPMENT_FAILURE')
   await page.fill('#f-problem_description', 'ทดสอบอัตโนมัติ: เครื่องมีเสียงเตือนตลอดเวลา')
-  await page.fill('#f-problem_date', yesterday())
-  await page.getByText('สูง - กระทบการให้บริการ').click()
+  await fillIf('#f-problem_date', yesterday())
+  if (await page.getByText('สูง - กระทบการให้บริการ').count()) await page.getByText('สูง - กระทบการให้บริการ').click()
 
   const counter = page.locator('[data-testid=upload-counter]')
   check((await counter.textContent()).includes('0/10'), `[${deviceName}] counter starts at 0/10`)
@@ -139,15 +141,13 @@ async function mobileFlow(browser, deviceName) {
   await page.locator('[data-testid=remove-file]').first().click()
   await page.waitForFunction(() => document.querySelector('[data-testid=upload-counter]')?.textContent?.includes('9/10'))
   check(true, `[${deviceName}] removed one image -> 9/10`)
-  await noHorizontalScroll(page, `[${deviceName}] form step 2`)
-  await page.locator('[data-testid=next-step]').click()
+  await noHorizontalScroll(page, `[${deviceName}] form (details + uploads)`)
 
-  // Step 3 — review + consent
-  await page.getByText('ตรวจสอบข้อมูลก่อนส่ง').waitFor()
+  // Consent is still required on the single page.
   await page.locator('[data-testid=submit-request]').click()
   check(await page.getByText('กรุณายอมรับประกาศความเป็นส่วนตัว').first().isVisible(), `[${deviceName}] consent required`)
   await page.locator('[data-testid=privacy-consent]').check()
-  await shot(page, `${tag}-05-review`)
+  await shot(page, `${tag}-05-before-submit`)
   await page.locator('[data-testid=submit-request]').click()
 
   await page.waitForURL(/\/request\/service\/success/, { timeout: 60_000 })

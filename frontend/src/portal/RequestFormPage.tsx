@@ -12,26 +12,23 @@ import { normaliseValue, validateField } from '../lib/validation'
 
 export const LAST_SUBMISSION_KEY = 'buc.lastSubmission'
 
-type Step = 0 | 1 | 2
-
+/** Single-page request form: all sections on one screen, one submit button. */
 export function RequestFormPage() {
   const { slug = '' } = useParams()
   const navigate = useNavigate()
-  const { tr, pick } = useI18n()
+  const { tr, pick, lang } = useI18n()
   const [form, setForm] = useState<PublicForm | null>(null)
   const [loadError, setLoadError] = useState<ApiError | null>(null)
   const [nonce, setNonce] = useState(0)
   const [values, setValues] = useState<Record<string, string>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [items, setItems] = useState<UploadItem[]>([])
-  const [step, setStep] = useState<Step>(0)
   const [consent, setConsent] = useState(false)
   const [honeypot, setHoneypot] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [progress, setProgress] = useState(0)
   const [submitError, setSubmitError] = useState<ApiError | null>(null)
   const idem = useRef<{ key: string; sig: string } | null>(null)
-  const topRef = useRef<HTMLDivElement>(null)
   const itemsRef = useRef(items)
   itemsRef.current = items
 
@@ -57,60 +54,39 @@ export function RequestFormPage() {
   useEffect(() => () => revokeItems(itemsRef.current), [])
 
   const fileField = form?.fields.find((f) => f.field_type === 'file') ?? null
-  const stepFields = useMemo(() => {
-    const fs = form?.fields ?? []
+  const sections = useMemo(() => {
+    const fs = (form?.fields ?? []).filter((f) => f.field_type !== 'file')
     return {
-      0: fs.filter((f) => f.section === 'customer' && f.field_type !== 'file'),
-      1: fs.filter((f) => f.section !== 'customer' && f.field_type !== 'file'),
-    } as Record<0 | 1, FormFieldDef[]>
+      contact: fs.filter((f) => f.section === 'customer'),
+      request: fs.filter((f) => f.section !== 'customer'),
+    }
   }, [form])
 
-  const scrollTop = () => topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-
-  const validateStep = useCallback(
-    (s: 0 | 1, lang: 'th' | 'en') => {
-      const errs: Record<string, string> = {}
-      for (const f of stepFields[s]) {
-        const e = validateField(f, values[f.key], lang)
-        if (e) errs[f.key] = e
-      }
-      return errs
-    },
-    [stepFields, values],
+  /** Error keys in on-screen order, so we always jump to the top-most problem. */
+  const errorOrder = useMemo(
+    () => [...sections.contact, ...sections.request].map((f) => f.key).concat(['attachments', 'privacy_consent']),
+    [sections],
   )
 
-  const { lang } = useI18n()
+  const validateAll = useCallback(() => {
+    const errs: Record<string, string> = {}
+    for (const f of [...sections.contact, ...sections.request]) {
+      const e = validateField(f, values[f.key], lang)
+      if (e) errs[f.key] = e
+    }
+    if (!consent) errs.privacy_consent = tr('กรุณายอมรับประกาศความเป็นส่วนตัว', 'Please accept the privacy notice')
+    return errs
+  }, [sections, values, consent, lang, tr])
 
   function focusFirstError(errs: Record<string, string>) {
-    const first = Object.keys(errs)[0]
+    const first = errorOrder.find((k) => errs[k]) ?? Object.keys(errs)[0]
     if (!first) return
     requestAnimationFrame(() => {
-      const el = document.querySelector<HTMLElement>(`[data-field="${first}"] input, [data-field="${first}"] select, [data-field="${first}"] textarea`)
-      el?.focus()
-      el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      const box = document.querySelector<HTMLElement>(`[data-field="${first}"]`)
+      const input = box?.querySelector<HTMLElement>('input:not([type=file]), select, textarea')
+      box?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      input?.focus({ preventScroll: true })
     })
-  }
-
-  function goNext() {
-    if (step === 2) return
-    const errs = validateStep(step, lang)
-    setErrors((prev) => {
-      const next = { ...prev }
-      for (const f of stepFields[step]) delete next[f.key]
-      return { ...next, ...errs }
-    })
-    if (Object.keys(errs).length) {
-      focusFirstError(errs)
-      return
-    }
-    setStep((s) => (s + 1) as Step)
-    scrollTop()
-  }
-
-  function goBack() {
-    if (step === 0) return
-    setStep((s) => (s - 1) as Step)
-    scrollTop()
   }
 
   function setValue(key: string, v: string) {
@@ -121,12 +97,9 @@ export function RequestFormPage() {
   async function submit() {
     if (!form || submitting) return
     setSubmitError(null)
-    const all = { ...validateStep(0, lang), ...validateStep(1, lang) }
-    if (!consent) all.privacy_consent = tr('กรุณายอมรับประกาศความเป็นส่วนตัว', 'Please accept the privacy notice')
+    const all = validateAll()
     if (Object.keys(all).length) {
       setErrors(all)
-      const firstStep: Step = stepFields[0].some((f) => all[f.key]) ? 0 : stepFields[1].some((f) => all[f.key]) ? 1 : 2
-      setStep(firstStep)
       focusFirstError(all)
       return
     }
@@ -166,13 +139,6 @@ export function RequestFormPage() {
       setSubmitError(err)
       if (err.code === 'VALIDATION_ERROR' && Object.keys(err.fields).length) {
         setErrors(err.fields)
-        const keys = Object.keys(err.fields)
-        const target: Step = stepFields[0].some((f) => keys.includes(f.key))
-          ? 0
-          : stepFields[1].some((f) => keys.includes(f.key)) || keys.includes('attachments')
-            ? 1
-            : 2
-        setStep(target)
         focusFirstError(err.fields)
       }
     } finally {
@@ -195,10 +161,13 @@ export function RequestFormPage() {
   }
   if (!form) return <Loading />
 
-  const steps = [tr('ข้อมูลผู้ติดต่อ', 'Contact'), tr('รายละเอียดคำขอ', 'Request details'), tr('ตรวจสอบและส่ง', 'Review & submit')]
+  const renderField = (f: FormFieldDef) => (
+    <DynamicField key={f.key} field={f} value={values[f.key] ?? ''} error={errors[f.key]} onChange={(v) => setValue(f.key, v)} />
+  )
+  const errorCount = Object.values(errors).filter(Boolean).length
 
   return (
-    <div ref={topRef} className="scroll-mt-20 space-y-4">
+    <div className="space-y-4">
       <Link to="/" className="inline-flex items-center gap-1 text-sm font-medium text-brand-700 hover:underline">
         <IconChevronLeft size={16} /> {tr('เลือกบริการอื่น', 'Choose another service')}
       </Link>
@@ -209,29 +178,19 @@ export function RequestFormPage() {
         </span>
         <div className="min-w-0">
           <h1 className="text-xl leading-tight font-bold text-navy-900">{pick(form.request_type, 'name')}</h1>
-          <p className="text-sm text-slate-500">{pick(form, 'title')}</p>
+          <p className="text-sm text-slate-500">
+            {tr('กรอกข้อมูลในหน้านี้แล้วกด "ส่งคำขอ" ด้านล่าง', 'Fill in this page and press "Submit request" below')}
+            <span className="text-red-600"> *</span> {tr('= จำเป็น', '= required')}
+          </p>
         </div>
       </div>
 
-      <ol className="grid grid-cols-3 gap-2" aria-label={tr('ขั้นตอน', 'Steps')}>
-        {steps.map((label, i) => (
-          <li key={label} aria-current={i === step ? 'step' : undefined}>
-            <div className={cx('h-1.5 rounded-full', i <= step ? 'bg-brand-600' : 'bg-slate-300')} />
-            <p className={cx('mt-1.5 text-xs leading-tight', i === step ? 'font-semibold text-navy-900' : 'text-slate-500')}>
-              <span className="mr-1">{i + 1}.</span>
-              {label}
-            </p>
-          </li>
-        ))}
-      </ol>
-
       <form
         noValidate
-        className="card space-y-5 p-4 sm:p-6"
+        className="space-y-4"
         onSubmit={(e) => {
           e.preventDefault()
-          if (step < 2) goNext()
-          else void submit()
+          void submit()
         }}
       >
         {/* Honeypot: invisible to people, often filled by bots. */}
@@ -240,51 +199,63 @@ export function RequestFormPage() {
           <input id="website" name="website" tabIndex={-1} autoComplete="off" value={honeypot} onChange={(e) => setHoneypot(e.target.value)} />
         </div>
 
-        {step === 0 && (
-          <>
-            <h2 className="text-base font-semibold text-navy-900">{steps[0]}</h2>
-            {stepFields[0].map((f) => (
-              <DynamicField key={f.key} field={f} value={values[f.key] ?? ''} error={errors[f.key]} onChange={(v) => setValue(f.key, v)} />
-            ))}
-          </>
+        {sections.contact.length > 0 && (
+          <section className="card space-y-5 p-4 sm:p-6" aria-labelledby="sec-contact">
+            <h2 id="sec-contact" className="text-base font-semibold text-navy-900">
+              {tr('ข้อมูลผู้ติดต่อ', 'Contact information')}
+            </h2>
+            {sections.contact.map(renderField)}
+          </section>
         )}
 
-        {step === 1 && (
-          <>
-            <h2 className="text-base font-semibold text-navy-900">{steps[1]}</h2>
-            {stepFields[1].map((f) => (
-              <DynamicField key={f.key} field={f} value={values[f.key] ?? ''} error={errors[f.key]} onChange={(v) => setValue(f.key, v)} />
-            ))}
-            {fileField && form.file_rules.max_files > 0 && (
-              <FileUploader
-                label={pick(fileField, 'label')}
-                help={pick(fileField, 'help')}
-                rules={form.file_rules}
-                items={items}
-                onChange={setItems}
-                error={errors.attachments}
-              />
-            )}
-          </>
+        {sections.request.length > 0 && (
+          <section className="card space-y-5 p-4 sm:p-6" aria-labelledby="sec-request">
+            <h2 id="sec-request" className="text-base font-semibold text-navy-900">
+              {tr('รายละเอียดคำขอ', 'Request details')}
+            </h2>
+            {sections.request.map(renderField)}
+          </section>
         )}
 
-        {step === 2 && (
-          <ReviewStep
-            form={form}
-            values={values}
-            items={items}
-            consent={consent}
-            setConsent={(v) => {
-              setConsent(v)
-              if (v) setErrors((p) => ({ ...p, privacy_consent: '' }))
-            }}
-            consentError={errors.privacy_consent}
-            onEdit={(s) => {
-              setStep(s)
-              scrollTop()
-            }}
-          />
+        {fileField && form.file_rules.max_files > 0 && (
+          <section className="card p-4 sm:p-6" data-field="attachments">
+            <FileUploader
+              label={pick(fileField, 'label')}
+              help={pick(fileField, 'help')}
+              rules={form.file_rules}
+              items={items}
+              onChange={setItems}
+              error={errors.attachments}
+            />
+          </section>
         )}
+
+        <div
+          className={cx('card p-4', errors.privacy_consent ? 'border-red-300 bg-red-50' : 'border-brand-100 bg-brand-50')}
+          data-field="privacy_consent"
+        >
+          <label className="flex cursor-pointer items-start gap-3 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={consent}
+              onChange={(e) => {
+                setConsent(e.target.checked)
+                if (e.target.checked) setErrors((p) => ({ ...p, privacy_consent: '' }))
+              }}
+              className="mt-0.5 h-5 w-5 shrink-0 accent-brand-600"
+              data-testid="privacy-consent"
+            />
+            <span>
+              <IconShield size={16} className="mr-1 inline text-brand-600" />
+              {tr('ข้าพเจ้าได้อ่านและยอมรับ', 'I have read and accept the ')}{' '}
+              <Link to="/privacy" target="_blank" className="font-medium text-brand-700 underline">
+                {tr('ประกาศความเป็นส่วนตัว', 'privacy notice')}
+              </Link>{' '}
+              {tr('และยินยอมให้บริษัทใช้ข้อมูลเพื่อดำเนินการตามคำขอนี้', 'and consent to the use of my data to handle this request')}
+            </span>
+          </label>
+          {errors.privacy_consent && <p className="mt-1 text-sm text-red-600">{errors.privacy_consent}</p>}
+        </div>
 
         {submitError && submitError.code !== 'VALIDATION_ERROR' && (
           <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
@@ -302,135 +273,32 @@ export function RequestFormPage() {
             )}
           </div>
         )}
-        {submitError?.code === 'VALIDATION_ERROR' && (
-          <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
-            {submitError.message}
-          </p>
-        )}
 
-        <div className="safe-bottom sticky bottom-0 -mx-4 flex gap-3 border-t border-slate-200 bg-white/95 px-4 pt-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0 sm:pb-0">
-          {step > 0 && (
-            <button type="button" className="btn-secondary min-h-12 flex-1 sm:flex-none" onClick={goBack} disabled={submitting}>
-              {tr('ย้อนกลับ', 'Back')}
-            </button>
+        <div className="safe-bottom sticky bottom-0 z-10 -mx-4 border-t border-slate-200 bg-white/95 px-4 pt-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0">
+          {errorCount > 0 && (
+            <p role="alert" className="mb-2 text-center text-sm text-red-600" data-testid="form-error-summary">
+              {tr(`กรุณาตรวจสอบข้อมูลที่ไม่ถูกต้อง ${errorCount} รายการ`, `Please fix ${errorCount} highlighted field(s)`)}
+            </p>
           )}
-          {step < 2 ? (
-            <button type="submit" className="btn-primary min-h-12 flex-[2] sm:flex-none sm:px-8" data-testid="next-step">
-              {tr('ถัดไป', 'Next')}
-            </button>
-          ) : (
-            <button type="submit" className="btn-primary min-h-12 flex-[2] sm:flex-none sm:px-8" disabled={submitting} data-testid="submit-request">
-              {submitting ? (
-                <>
-                  <Spinner className="h-4 w-4" />
-                  {items.length > 0 && progress > 0 && progress < 1
-                    ? tr(`กำลังอัปโหลด ${Math.round(progress * 100)}%`, `Uploading ${Math.round(progress * 100)}%`)
-                    : tr('กำลังส่ง...', 'Submitting...')}
-                </>
-              ) : (
-                tr('ส่งคำขอ', 'Submit request')
-              )}
-            </button>
-          )}
+          <button
+            type="submit"
+            className="btn-primary min-h-12 w-full sm:w-auto sm:px-10"
+            disabled={submitting}
+            data-testid="submit-request"
+          >
+            {submitting ? (
+              <>
+                <Spinner className="h-4 w-4" />
+                {items.length > 0 && progress > 0 && progress < 1
+                  ? tr(`กำลังอัปโหลด ${Math.round(progress * 100)}%`, `Uploading ${Math.round(progress * 100)}%`)
+                  : tr('กำลังส่ง...', 'Submitting...')}
+              </>
+            ) : (
+              tr('ส่งคำขอ', 'Submit request')
+            )}
+          </button>
         </div>
       </form>
     </div>
   )
 }
-
-function ReviewStep({
-  form,
-  values,
-  items,
-  consent,
-  setConsent,
-  consentError,
-  onEdit,
-}: {
-  form: PublicForm
-  values: Record<string, string>
-  items: UploadItem[]
-  consent: boolean
-  setConsent: (v: boolean) => void
-  consentError?: string
-  onEdit: (s: Step) => void
-}) {
-  const { tr, pick } = useI18n()
-  const display = (f: FormFieldDef) => {
-    const v = values[f.key]
-    if (!v) return '-'
-    if (f.field_type === 'select') {
-      const o = f.options?.find((x) => x.value === v)
-      return o ? pick(o, 'label') : v
-    }
-    return v
-  }
-  const groups: { title: string; step: Step; fields: FormFieldDef[] }[] = [
-    { title: tr('ข้อมูลผู้ติดต่อ', 'Contact'), step: 0, fields: form.fields.filter((f) => f.section === 'customer' && f.field_type !== 'file') },
-    { title: tr('รายละเอียดคำขอ', 'Request details'), step: 1, fields: form.fields.filter((f) => f.section !== 'customer' && f.field_type !== 'file') },
-  ]
-  return (
-    <div className="space-y-5">
-      <h2 className="text-base font-semibold text-navy-900">{tr('ตรวจสอบข้อมูลก่อนส่ง', 'Review your request')}</h2>
-      {groups.map((g) => (
-        <div key={g.title} className="rounded-lg border border-slate-200">
-          <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-3 py-2">
-            <h3 className="text-sm font-semibold text-slate-700">{g.title}</h3>
-            <button type="button" className="text-sm font-medium text-brand-700 hover:underline" onClick={() => onEdit(g.step)}>
-              {tr('แก้ไข', 'Edit')}
-            </button>
-          </div>
-          <dl className="divide-y divide-slate-100 px-3">
-            {g.fields
-              .filter((f) => values[f.key])
-              .map((f) => (
-                <div key={f.key} className="grid grid-cols-1 gap-0.5 py-2 text-sm sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)] sm:gap-3">
-                  <dt className="text-slate-500">{pick(f, 'label')}</dt>
-                  <dd className="break-words whitespace-pre-line text-slate-900">{display(f)}</dd>
-                </div>
-              ))}
-          </dl>
-        </div>
-      ))}
-      {items.length > 0 && (
-        <div>
-          <p className="mb-2 text-sm font-semibold text-slate-700">
-            {tr('ไฟล์แนบ', 'Attachments')} ({items.length})
-          </p>
-          <ul className="grid grid-cols-4 gap-2 sm:grid-cols-6">
-            {items.map((it) => (
-              <li key={it.id} className="overflow-hidden rounded-md border border-slate-200 bg-white">
-                {it.previewUrl ? (
-                  <img src={it.previewUrl} alt={it.file.name} className="aspect-square w-full object-cover" />
-                ) : (
-                  <div className="flex aspect-square items-center justify-center p-1 text-center text-[10px] break-all text-slate-600">{it.file.name}</div>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      <div className={cx('rounded-lg border p-3', consentError ? 'border-red-300 bg-red-50' : 'border-brand-100 bg-brand-50')} data-field="privacy_consent">
-        <label className="flex cursor-pointer items-start gap-3 text-sm text-slate-700">
-          <input
-            type="checkbox"
-            checked={consent}
-            onChange={(e) => setConsent(e.target.checked)}
-            className="mt-0.5 h-5 w-5 shrink-0 accent-brand-600"
-            data-testid="privacy-consent"
-          />
-          <span>
-            <IconShield size={16} className="mr-1 inline text-brand-600" />
-            {tr('ข้าพเจ้าได้อ่านและยอมรับ', 'I have read and accept the ')}{' '}
-            <Link to="/privacy" target="_blank" className="font-medium text-brand-700 underline">
-              {tr('ประกาศความเป็นส่วนตัว', 'privacy notice')}
-            </Link>{' '}
-            {tr('และยินยอมให้บริษัทใช้ข้อมูลเพื่อดำเนินการตามคำขอนี้', 'and consent to the use of my data to handle this request')}
-          </span>
-        </label>
-        {consentError && <p className="mt-1 text-sm text-red-600">{consentError}</p>}
-      </div>
-    </div>
-  )
-}
-
